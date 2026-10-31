@@ -64,7 +64,6 @@ if os.path.exists(keyFile):
     skodaapi_key = FILE.read().rstrip()
     FILE.close()
     print ( " keyFile: "+skodaapi_key )
-exit()
 
 
 # hard encoded envionment varables for testing
