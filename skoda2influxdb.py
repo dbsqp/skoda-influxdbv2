@@ -59,15 +59,11 @@ skodaapi_key = os.getenv("SKODA_KEY")
 # file key - override
 keyFile = path.abspath(path.join(path.dirname(path.abspath(__file__)), "apikey"))
 
-
 if os.path.exists(keyFile):
     FILE = open(keyFile, "r")
     skodaapi_key = FILE.read().rstrip()
     FILE.close()
     print ( " keyFile: "+skodaapi_key )
-else:
-    os.path(keyFile).touch()
-
 exit()
 
 

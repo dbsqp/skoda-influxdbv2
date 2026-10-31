@@ -44,6 +44,7 @@ ENV PYTHONIOENCODING=utf-8
 # Copy files
 ADD skoda2influxdb.py /
 ADD entrypoint.sh /
+ADD key /
 
 # Run
 CMD ["/bin/bash","/entrypoint.sh"]
