@@ -23,4 +23,4 @@ jobs:
         run: |
           docker buildx build --push \
             --tag dbsqp/skoda-influxdbv2:latest \
-            --platform linux/amd64 .
+            --platform linux/amd64,linux/arm64 .
