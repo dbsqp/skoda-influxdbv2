@@ -9,7 +9,7 @@ retryMins=20
 
 # calculations
 sleepSecs=$( bc <<< "$sleepMins * 60" )
-retrySecs=$( bc <<< "$sleepSecs * 60" )
+retrySecs=$( bc <<< "$retryMins * 60" )
 
 # main loop
 while :
@@ -31,9 +31,17 @@ do
   returnStatus=$?
   if [ ${returnStatus} -ne 0 ]; then
     echo "   ERROR : ${returnStatus}"
-    echo "   RETRY : ${retryMins} mins..."
+
+    epochRetry=$( bc <<< "$timeStop + $retrySecs" )
+    timeRetry=$( gdate --date=@$epochRetry +%H:%M:%S )
+    echo "   RETRY : ${retryMins} mins at ${timeRetry}"
+
+    sleep $retrySecs
   else
-    echo "    WAIT : ${sleepMins} mins..."
+    epochWake=$( bc <<< "$timeStop + $sleepSecs" )
+    timeWake=$( gdate --date=@$epochWake +%H:%M:%S )
+    echo "    WAIT : ${sleepMins} mins until ${timeWake}"
+
     sleep $sleepSecs
   fi
 done

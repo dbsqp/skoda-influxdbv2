@@ -145,7 +145,10 @@ headerLimit = responseHeaders['RateLimit-Limit']
 headerRemaining = responseHeaders['RateLimit-Remaining']
 headerReset = responseHeaders['RateLimit-Reset']
 
-print("info API : %d/%d remaining - reset in %.1f mins [ %d secs ]" % ( int(headerRemaining), int(headerLimit), float(headerReset)/60, int(headerReset) ) )
+dtReset = datetime.utcfromtimestamp( ( epochNow + headerReset ) )
+timeReset = dtReset.strftime('%H:%M:%S')
+
+print("info API : %d/%d remaining - reset in %.1f mins [ %d secs ] at %s" % ( int(headerRemaining), int(headerLimit), float(headerReset)/60, int(headerReset), timeReset ) )
 
 if responseStatus != 200:
     print("   error : response status != 200")
