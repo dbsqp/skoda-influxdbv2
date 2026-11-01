@@ -26,14 +26,18 @@ from os import path
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
-# debug enviroment variables
+# debug
 debug_str=os.getenv("DEBUG", None)
 if debug_str is not None:
-	debug = debug_str.lower() == "true"
+    debug = debug_str.lower() == "true"
+    print ( "   debug : TRUE - DEBUG enviroment varable set" )
 else:
 	debug = False
 
-host = os.getenv("HOST", socket.gethostname())
+if os.path.exists('private-skoda.py'):
+    debug = True
+    print ( "   debug : TRUE - debug file present" )
+
 
 
 # influxDBv2 envionment variables
@@ -66,13 +70,13 @@ if os.path.exists(keyFile):
     FILE = open(keyFile, "r")
     skodaapi_key = FILE.read().rstrip()
     FILE.close()
-    print("  apikey : "+skodaapi_key )
+    print("key file : "+skodaapi_key )
 
-# hard encoded envionment varables for testing
+# envionment varable overide for local testing
 if os.path.exists('private-skoda.py'):
-    print("   local : private-skoda.py")
+    print("   debug : TRUE - private-skoda.py file present" )
+    print(" overide : include private-skoda.py")
     exec(compile(source=open('private-skoda.py').read(), filename='private-skoda.py', mode='exec'))
-    debug = True
 
 # skoda api data test
 if skodaapi_vin == "UNKNOWN" or skodaapi_key == "UNKNOWN":
@@ -82,11 +86,6 @@ if skodaapi_vin == "UNKNOWN" or skodaapi_key == "UNKNOWN":
         print ( "SKODA_KEY : "+skodaapi_key )
     print("     exit : return status = 2" )
     sys.exit(2)
-
-
-# report debug status
-if debug:
-	print ( "   debug : TRUE" )
 
 
 # influxDBv2
@@ -120,6 +119,7 @@ def write_influxdb():
 # call API
 dtNow = datetime.now()
 epochNow = int( dtNow.timestamp() )
+host = os.getenv("HOST", socket.gethostname())
 
 print( "call API : VIN = "+skodaapi_vin )
 
