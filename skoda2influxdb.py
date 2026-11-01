@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 # encoding=utf-8
 
-# TODO : read key from file
+# get skoda data from API based on VIN and puch to InfluxDB
 
-# pip3 install pytz influxdb_client requests
+# local test setup
 # python3 -c "help('modules')"
+# pip3 install pytz influxdb_client requests
 
+
+# setup python
 from pytz import timezone
 from datetime import datetime
 from influxdb_client import InfluxDBClient, Point, WriteOptions
@@ -32,6 +35,7 @@ else:
 
 host = os.getenv("HOST", socket.gethostname())
 
+
 # influxDBv2 envionment variables
 influxdb2_host=os.getenv('INFLUXDB2_HOST', "localhost")
 influxdb2_port=int(os.getenv('INFLUXDB2_PORT', "8086"))
@@ -52,9 +56,8 @@ else:
     influxdb2_ssl_verify = False
 
 # skoda api envionment variables
-skodaapi_vin = os.getenv("SKODA_VIN")
-skodaapi_key = os.getenv("SKODA_KEY")
-
+skodaapi_vin = os.getenv('SKODA_VIN',"UNKNOWN")
+skodaapi_key = os.getenv('SKODA_KEY',"UNKNOWN")
 
 # file key - override
 keyFile = path.abspath(path.join(path.dirname(path.abspath(__file__)), "apikey"))
@@ -63,22 +66,27 @@ if os.path.exists(keyFile):
     FILE = open(keyFile, "r")
     skodaapi_key = FILE.read().rstrip()
     FILE.close()
-    print ( " keyFile: "+skodaapi_key )
-
+    print("  apikey : "+skodaapi_key )
 
 # hard encoded envionment varables for testing
 if os.path.exists('private-skoda.py'):
-    print("  incl: private-skoda.py")
+    print("   local : private-skoda.py")
     exec(compile(source=open('private-skoda.py').read(), filename='private-skoda.py', mode='exec'))
     debug = True
+
+# skoda api data test
+if skodaapi_vin == "UNKNOWN" or skodaapi_key == "UNKNOWN":
+    if skodaapi_vin == "UNKNOWN":
+        print ( "SKODA_VIN : "+skodaapi_vin )
+    if skodaapi_key == "UNKNOWN":
+        print ( "SKODA_KEY : "+skodaapi_key )
+    print("     exit : return status = 2" )
+    sys.exit(2)
 
 
 # report debug status
 if debug:
-	print ( " debug: TRUE" )
-else:
-	print ( " debug: FALSE" )
-	
+	print ( "   debug : TRUE" )
 
 
 # influxDBv2
@@ -86,134 +94,170 @@ if influxdb2_ssl_str:
     influxdb2_url="https://" + influxdb2_host + ":" + str(influxdb2_port)
 else:
     influxdb2_url="http://" + influxdb2_host + ":" + str(influxdb2_port)
-
-if debug:
-	print ( "influx: "+influxdb2_url )
-	print ( "bucket: "+influxdb2_bucket )
 	
 if influxdb2_ssl_verify:
-	print ( "verify: True" )
 	client = InfluxDBClient(url=influxdb2_url, token=influxdb2_token, org=influxdb2_org, verify_ssl=True)
 else:
-	print ( "verify: False" )
 	client = InfluxDBClient(url=influxdb2_url, token=influxdb2_token, org=influxdb2_org, verify_ssl=False)
 
 write_api = client.write_api(write_options=SYNCHRONOUS)
 
+if debug:
+    print ( "  influx : "+influxdb2_url )
+    print ( "  bucket : "+influxdb2_bucket )
+    if influxdb2_ssl_verify:
+        print ( "  verify : TRUE" )
+    else:
+        print ( "  verify : FALSE" )
+
 def write_influxdb():
     if debug:
-        print ("INFLUX: "+influxdb2_bucket)
+        print ("\nInfluxDB : info = "+senddata["tags"]["info"]+" > "+influxdb2_bucket)
         print (json.dumps(senddata,indent=4))
-        print()
     write_api.write(bucket=influxdb2_bucket, org=influxdb2_org, record=[senddata], write_precision="s")
 
 
+# call API
+dtNow = datetime.now()
+epochNow = int( dtNow.timestamp() )
 
-
-
-
-# Get Data for VIN via Skoda API using key
-print("Running Skoda API")
+print( "call API : VIN = "+skodaapi_vin )
 
 apiHEADR = { "X-API-Key" : skodaapi_key }
 skodaURL = "https://public.api.connect.skoda-auto.cz/api/v1/vehicles/"+skodaapi_vin
 #apiQUERY = {'include': ['status', 'odometer', 'fuelStatus', 'parkingPosition']}
 apiQUERY = {}
 
-
 if debug:
-    print()
-    print ( "input vin: "+skodaapi_vin )
-    print ( "input key: "+skodaapi_key )
-    print ( "input url: "+skodaURL )
+    print ( "     key : "+skodaapi_key )
+    print ( "     url : "+skodaURL )
     #print ( "hdr: " )
     #[ print ( f"{key}: {value}") for key, value in apiHEADR.items() ]
     #print ( "qry: " )
    # [ print ( f"{key}: {value}") for key, value in apiQUERY.items() ]
 
-rawResponse = requests.get(skodaURL, params=apiQUERY, headers=apiHEADR)
-statusResponse = rawResponse.status_code
-jsonResponse = rawResponse.json()
+responseFull = requests.get(skodaURL, params=apiQUERY, headers=apiHEADR)
+responseStatus = responseFull.status_code
+responseJSON = responseFull.json()
+responseHeaders = responseFull.headers
+
+headerLimit = responseHeaders['RateLimit-Limit']
+headerRemaining = responseHeaders['RateLimit-Remaining']
+headerReset = responseHeaders['RateLimit-Reset']
+
+print("info API : %d/%d remaining - reset in %.1f mins [ %d secs ]" % ( int(headerRemaining), int(headerLimit), float(headerReset)/60, int(headerReset) ) )
+
+if responseStatus != 200:
+    print("   error : response status != 200")
+
+    match responseStatus:
+        case 401:
+            responseError = "     401 : API key passed expiry date"
+        case 403:
+            responseError = "     403 : API key not authorized to execute operation OR vehicle refused operation for user API key belongs to"
+        case 422:
+            responseError = "     422 : Vehicle lacks capability operation needs OR opperation currently disabled"
+        case 429:
+            responseError = "     429 : Rate limit for API key exceeded OR vehicle declined operation but can be retried later"
+        case _:
+            responseError = "     %d : Unknown response status" % ( responseStatus )
+
+    print( responseError )
+
+    # Influx - api
+    senddata={}
+    senddata["measurement"]="car"
+    senddata["tags"]={}
+    senddata["tags"]["source"]="docker skoda-influxdbv2"
+    senddata["tags"]["origin"]="SkodaAPI"
+    senddata["tags"]["vin"]=skodaapi_vin
+    senddata["tags"]["host"]=host
+    senddata["tags"]["info"]="api"
+    senddata["fields"]={}
+    senddata["fields"]["response"]=responseStatus
+    senddata["time"]=epochNow
+    write_influxdb()
+
+    print("    exit : return status = 1" )
+    sys.exit(1)
 
 if debug:
-    jsonString = json.dumps(jsonResponse, indent=4)
-    print ( "     url : ",rawResponse.url )
-    print ( "response : ",statusResponse )
-    print ( "    json :\n"+jsonString )
-    print()
-
-if statusResponse != 200:
-    print ( "error : ",statusResponse )
-    exit()
-
-results = jsonResponse
+    stringJSON = json.dumps(responseJSON, indent=4)
+    print ( "  status :",responseStatus )
+    print ( "   limit :",headerLimit )
+    print ( "  remain :",headerRemaining )
+    print ( "   reset :",headerReset )
+    print ( "\nJSON\n"+stringJSON+"\n" )
 
 
+# pass json
+vin = responseJSON["vehicle"]["vin"]
+name = responseJSON["vehicle"]["name"]
+
+timeOdometer = responseJSON["vehicle"]["odometer"]["carCapturedTimestamp"]
+odometer = responseJSON["vehicle"]["odometer"]["mileageInKm"]
+
+timeFuel = responseJSON["vehicle"]["fuelStatus"]["carCapturedTimestamp"]
+fuel = responseJSON["vehicle"]["fuelStatus"]["primaryEngineRange"]["currentFuelLevelInPercent"]
+fuelRange = responseJSON["vehicle"]["fuelStatus"]["totalRangeInKm"]
+
+timeState = responseJSON["vehicle"]["status"]["carCapturedTimestamp"]
+status = responseJSON["vehicle"]["status"]["overall"]["reliableLockStatus"]
+locked = responseJSON["vehicle"]["status"]["overall"]["locked"]
+doorsLocked = responseJSON["vehicle"]["status"]["overall"]["doorsLocked"]
+doors = responseJSON["vehicle"]["status"]["overall"]["doors"]
+windows = responseJSON["vehicle"]["status"]["overall"]["windows"]
+lights = responseJSON["vehicle"]["status"]["overall"]["lights"]
+boot = responseJSON["vehicle"]["status"]["detail"]["trunk"]
+bonnet = responseJSON["vehicle"]["status"]["detail"]["bonnet"]
+
+parked = responseJSON["vehicle"]["parkingPosition"]["state"]
+address = responseJSON["vehicle"]["parkingPosition"]["formattedAddress"]
+longitude = responseJSON["vehicle"]["parkingPosition"]["gpsCoordinates"]["longitude"]
+latitude = responseJSON["vehicle"]["parkingPosition"]["gpsCoordinates"]["latitude"]
 
 
-# Basic values
-vin = results["vehicle"]["vin"]
-name = results["vehicle"]["name"]
+# timestamp to iso and epoch
+isoNow = dtNow.isoformat(sep=' ',timespec='seconds')
 
-timeOddo = results["vehicle"]["odometer"]["carCapturedTimestamp"]
-odometer = results["vehicle"]["odometer"]["mileageInKm"]
-
-timeFuel = results["vehicle"]["fuelStatus"]["carCapturedTimestamp"]
-fuel = results["vehicle"]["fuelStatus"]["primaryEngineRange"]["currentFuelLevelInPercent"]
-fuelRange = results["vehicle"]["fuelStatus"]["totalRangeInKm"]
-
-timeState = results["vehicle"]["status"]["carCapturedTimestamp"]
-status = results["vehicle"]["status"]["overall"]["reliableLockStatus"]
-locked = results["vehicle"]["status"]["overall"]["locked"]
-doorsLocked = results["vehicle"]["status"]["overall"]["doorsLocked"]
-doors = results["vehicle"]["status"]["overall"]["doors"]
-windows = results["vehicle"]["status"]["overall"]["windows"]
-lights = results["vehicle"]["status"]["overall"]["lights"]
-boot = results["vehicle"]["status"]["detail"]["trunk"]
-bonnet = results["vehicle"]["status"]["detail"]["bonnet"]
-
-parked = results["vehicle"]["parkingPosition"]["state"]
-address = results["vehicle"]["parkingPosition"]["formattedAddress"]
-longitude = results["vehicle"]["parkingPosition"]["gpsCoordinates"]["longitude"]
-latitude = results["vehicle"]["parkingPosition"]["gpsCoordinates"]["latitude"]
-
-
-
-# timestamp to epoch
-dtOddo = datetime.strptime(timeOddo, "%Y-%m-%dT%H:%M:%SZ")
-isoOddo = dtOddo.isoformat()
-epochOddo = int( dtOddo.timestamp())
+dtOdometer = datetime.strptime(timeOdometer, "%Y-%m-%dT%H:%M:%SZ")
+isoOdometer = dtOdometer.isoformat(sep=' ',timespec='seconds')
+epochOdometer = int( dtOdometer.timestamp())
 
 dtFuel = datetime.strptime(timeFuel, "%Y-%m-%dT%H:%M:%SZ")
-isoFuel = dtFuel.isoformat()
+isoFuel = dtFuel.isoformat(sep=' ',timespec='seconds')
 epochFuel = int( dtFuel.timestamp() )
 
 dtState = datetime.strptime(timeState, "%Y-%m-%dT%H:%M:%SZ")
-isoState = dtState.isoformat()
+isoState = dtState.isoformat(sep=' ',timespec='seconds')
 epochState = int( dtState.timestamp() )
 
-# Print results to Docker logs
-print(" odometer %d km" % (odometer) )
-print("     time",timeOddo )
+# ago
+ageMins = ( epochNow - epochOdometer ) / 60
+ageHrs = ageMins / 60
 
+# report to Docker log
+print("odometer : %d km" % (odometer) )
+print("captured :",timeOdometer )
+print("data age : %.1f hrs [ %.0f mins ]" % ( ageHrs, ageMins ) )
 
 if debug:
-    print("  epoch-o",epochOddo )
-    print("  epoch-f",epochFuel )
-    print("  epoch-s",epochState )
-    print("    iso-o",isoOddo )
-    print("    iso-f",isoFuel )
-    print("    iso-s",isoState )
-    print("     fuel",fuel )
-    print("    range",fuelRange )
-    print("    state",parked )
-    print("  address",address )
-    print()
+    print(" epoch-o :",epochOdometer )
+    print(" epoch-f :",epochFuel )
+    print(" epoch-s :",epochState )
+    print(" epoch-n :",epochNow )
+    print("   iso-o :",isoOdometer )
+    print("   iso-f :",isoFuel )
+    print("   iso-s :",isoState )
+    print("   iso-n :",isoNow )
+    print("    fuel :",fuel,"%" )
+    print("   range :",fuelRange,"km" )
+    print("   state :",parked )
+    print(" address :",address )
 
 
-# Influx - oddometer
+# Influx - general
 senddata={}
-
 senddata["measurement"]="car"
 senddata["tags"]={}
 senddata["tags"]["source"]="docker skoda-influxdbv2"
@@ -222,12 +266,12 @@ senddata["tags"]["vin"]=vin
 senddata["tags"]["name"]=name
 senddata["tags"]["host"]=host
 
+# Influx - oddometer
 senddata["tags"]["info"]="oddometer"
 senddata["fields"]={}
 senddata["fields"]["km"]=odometer
-senddata["time"]=epochOddo
+senddata["time"]=epochOdometer
 write_influxdb()
-
 
 # influx - park
 del senddata["tags"]["info"]
@@ -241,7 +285,6 @@ senddata["fields"]["longitude"]=longitude
 senddata["fields"]["latitude"]=latitude
 write_influxdb()
 
-
 # influx - fuel
 del senddata["tags"]["info"]
 del senddata["fields"]
@@ -253,7 +296,6 @@ senddata["fields"]["percent"]=fuel
 senddata["fields"]["km"]=fuelRange
 senddata["time"]=epochFuel
 write_influxdb()
-
 
 # influx - state
 del senddata["tags"]["info"]
@@ -269,3 +311,18 @@ senddata["fields"]["bonnet"]=bonnet
 senddata["fields"]["boot"]=boot
 senddata["time"]=epochState
 write_influxdb()
+
+# influx - api
+del senddata["tags"]["name"]
+del senddata["tags"]["info"]
+del senddata["fields"]
+del senddata["time"]
+
+senddata["tags"]["info"]="api"
+senddata["fields"]={}
+senddata["fields"]["response"]=responseStatus
+senddata["time"]=epochNow
+write_influxdb()
+
+# return OK
+sys.exit(0)
