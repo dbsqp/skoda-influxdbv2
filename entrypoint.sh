@@ -7,6 +7,12 @@
 sleepMins=10
 retryMins=20
 
+# OS date
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    alias date='gdate'
+    shopt -s expand_aliases
+fi
+
 # calculations
 sleepSecs=$( bc <<< "$sleepMins * 60" )
 retrySecs=$( bc <<< "$retryMins * 60" )
