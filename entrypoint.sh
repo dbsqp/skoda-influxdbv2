@@ -33,13 +33,13 @@ do
     echo "   ERROR : ${returnStatus}"
 
     epochRetry=$( bc <<< "$timeStop + $retrySecs" )
-    timeRetry=$( gdate --date=@$epochRetry +%H:%M:%S )
+    timeRetry=$( date --date=@$epochRetry +%H:%M:%S )
     echo "   RETRY : ${retryMins} mins at ${timeRetry}"
 
     sleep $retrySecs
   else
     epochWake=$( bc <<< "$timeStop + $sleepSecs" )
-    timeWake=$( gdate --date=@$epochWake +%H:%M:%S )
+    timeWake=$( date --date=@$epochWake +%H:%M:%S )
     echo "    WAIT : ${sleepMins} mins until ${timeWake}"
 
     sleep $sleepSecs
