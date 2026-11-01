@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build-amd64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: checkout code
@@ -31,7 +31,7 @@ jobs:
             --platform linux/amd64 .
 
   build-arm64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - name: checkout code
